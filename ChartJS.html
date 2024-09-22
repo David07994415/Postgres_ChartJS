@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+
+<body>
+    <h1> Postgres EF 安裝</h1>
+    <p>Reference：https://www.youtube.com/watch?v=z7G6HV7WWz0</p>
+    <ul>套件：
+        <li>Microsoft.EntityFrameworkCore</li>
+        <li>Microsoft.EntityFrameworkCore.Tools</li>
+        <li>Npgsql.EntityFrameworkCore.PostgreSQL</li>
+    </ul>
+    <ul>建立 DbContext CS File：
+        <li>
+            <p>
+                public class PGDbContext:DbContext
+                {
+                    protexted readonly IConfiguration _Configuration;
+                    
+                    public PGDbContext(IConfiguration configuration,
+                    DbContextOptions<PGDbContext> options):base(otpions)
+                    {
+                        _Configuration = configuration;
+                    }
+
+                    protected override void OnModelCreating(ModelBuilder modelBuilder)
+                    {
+                        modelBuilder.UseSerialColumns(); 
+                    }
+
+                    public DbSet<MyEntity> MyEntities { get; set; }
+                }
+            </p>
+        </li>
+    </ul>
+    <ul>建立 ConnectionString：
+        <li>
+            <p>
+                ConnectionStrings:{
+                    "PGConString":"Server=localhost;Database=Db_Name;Port:5432;User Id=Admin;Password:Admin"
+                }
+            </p>
+        </li>
+    </ul>
+    <ul>建立 DI 注入：
+        <li>
+            <p>
+                builder.Services.AddDbContext<PGDbContext>(option
+                    =>option.UseNpgsql(builder.Configuration.GetConnectionString("PGConString")))
+            </p>
+        </li>
+    </ul>
+
+    <canvas id="myPieChart"></canvas>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        const ctx = document.getElementById('myPieChart').getContext('2d');
+        let myPieChart;
+
+        function fetchData() {
+            $.ajax({
+                url: 'your-data-endpoint', // 替換為你的 API 地址
+                method: 'GET',
+                success: function (response) {
+                    const dataValues = response.percentages; // 假設返回的百分比數據
+                    const counts = response.counts; // 假設返回的個數數據
+
+                    // 如果圖表已經存在，則更新數據
+                    if (myPieChart) {
+                        myPieChart.data.datasets[0].data = dataValues;
+                        myPieChart.data.labels = ['A', 'B', 'C']; // 更新標籤（根據需要）
+                        myPieChart.update();
+                    } else {
+                        // 創建新的圖表
+                        myPieChart = new Chart(ctx, {
+                            type: 'pie',
+                            data: {
+                                labels: ['A', 'B', 'C'], // 可以根據 API 返回的數據更新
+                                datasets: [{
+                                    data: dataValues,
+                                    backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56'],
+                                }]
+                            },
+                            options: {
+                                plugins: {
+                                    tooltip: {
+                                        callbacks: {
+                                            label: function (tooltipItem) {
+                                                const percentage = tooltipItem.raw + '%'; // 百分比
+                                                const count = counts[tooltipItem.dataIndex]; // 獲取對應的個數
+                                                return `${count} (${percentage})`;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    }
+                },
+                error: function (error) {
+                    console.error('Error fetching data:', error);
+                }
+            });
+        }
+
+        // 觸發數據獲取
+        fetchData();
+    </script>
+
+</body>
+
+</html>
