@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <div>
+        <h2>Postgre 分割資料表語法</h2>
+        <div>
+            <h3>1. 創立表單全新表單</h3>
+            <p>
+                CREATE SEQUENCE logtable_id_seq;  -- 創建序列
+                CREATE TABLE logtable (
+                    id BIGINT NOT NULL DEFAULT nextval('logtable_id_seq'),
+                    logtime TIMESTAMP NOT NULL,
+                    message TEXT
+                ) PARTITION BY RANGE (logtime);
+                CREATE INDEX logtable_id ON logtable(id)  -- 建立索引
+            </p>
+        </div>
+        <div>
+            <h3>2. 建立分區表</h3>
+            <p>
+                CREATE TABLE logtable_202301 PARTITION OF logtable
+                FOR VALUES FROM ('2023-01-01') TO ('2023-02-01');
+                
+                CREATE TABLE logtable_202302 PARTITION OF logtable
+                FOR VALUES FROM ('2023-02-01') TO ('2023-03-01');
+            </p>
+
+            <h3>2. 檢查分區表是否建立</h3>
+            <p>
+                SELECT tablename 
+                FROM pg_tables 
+                WHERE schemaname = 'public' 
+                AND tablename LIKE 'logtable_%';
+            </p>
+        </div>
+        <div>
+            <h3>3. 插入測試資料</h3>
+            <p>
+                INSERT INTO logtable (logtime, message) 
+                VALUES ('2023-01-02', 'This is a test log 1')
+                ,('2023-02-03', 'This is a test log 2');
+            </p>
+        </div>
+
+        <div>
+            <h3>4. 可以建立 自動化生成分區表 函數</h3>
+            <p>
+                CREATE OR REPLACE FUNCTION create_monthly_partition()
+                RETURNS TRIGGER AS $$  
+                    -- RETURNS TRIGGER: 指定這個函數會在觸發器中使用，並返回觸發器行 (NEW 行)。
+                    -- $$: PostgreSQL 使用這種方式來標記函數體的開始和結束。
+                DECLARE
+                    partition_name TEXT;
+                    start_date DATE;
+                    end_date DATE;
+                BEGIN
+                    -- 取得資料插入的月份，NEW 代表新增的資料
+                    start_date := date_trunc('month', NEW.log_time);
+                    end_date := start_date + INTERVAL '1 month';
+
+                        -- date_trunc('month', NEW.log_time): 使用 date_trunc 函數將 NEW.log_time（即即將插入的資料的時間欄位）截斷到月份的第一天。例如，如果 log_time 是 2023-10-15，start_date 會變為 2023-10-01。
+                        -- start_date + INTERVAL '1 month': 用來計算該月份的結束日期，實際上是下個月的第一天。例如，start_date 是 2023-10-01，那麼 end_date 就會變為 2023-11-01。
+                    
+                    -- 設定分區名稱，例如 log_table_2023_10，||為字串合併
+                    partition_name := 'log_table_' || to_char(start_date, 'YYYY_MM');
+                    
+                    -- 檢查分區是否存在，如果不存在則創建
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_tables 
+                        WHERE schemaname = 'public' 
+                        AND tablename = partition_name
+                    ) THEN
+                        EXECUTE format('
+                            CREATE TABLE IF NOT EXISTS %I PARTITION OF log_table
+                            FOR VALUES FROM (''%s'') TO (''%s'');   -- 不包含後面的 TO(''%s'') 日期
+                        ', partition_name, start_date, end_date);   
+                    END IF;
+                    
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;  -- LANGUAGE plpgsql: 指定這段程式是用 PL/pgSQL 語言撰寫。
+            </p>
+            <h3>4. 每次新增資料前啟動 Trigger 函數</h3>
+            <p>
+                CREATE TRIGGER trigger_create_partition
+                BEFORE INSERT ON logtable
+                FOR EACH ROW
+                EXECUTE FUNCTION create_monthly_partition();
+            </p>
+
+
+            <h3>年份版本</h3>
+            <p>
+                CREATE OR REPLACE FUNCTION create_year_partition() 
+                RETURNS TRIGGER AS $$  
+                DECLARE
+                    partition_name TEXT;
+                    start_date DATE;
+                    end_date DATE;
+                BEGIN
+                    -- 取得資料插入的年份
+                    start_date := date_trunc('year', NEW.log_time); 
+                    end_date := start_date + INTERVAL '1 year'; 
+
+                    -- 設定分區名稱，例如 log_table_2023
+                    partition_name := 'log_table_' || to_char(start_date, 'YYYY'); 
+                    
+                    -- 檢查分區是否存在，如果不存在則創建
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_tables 
+                        WHERE schemaname = 'public' 
+                        AND tablename = partition_name
+                    ) THEN
+                        EXECUTE format('
+                            CREATE TABLE IF NOT EXISTS %I PARTITION OF log_table
+                            FOR VALUES FROM (''%s'') TO (''%s'');   -- 不包含後面的 TO(''%s'') 日期
+                        ', partition_name, start_date, end_date);   
+                    END IF;
+                    
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+            </p>
+        </div>
+
+
+        <div>
+            <h3>X. 檢查分區建立前後的效能</h3>
+            <p>
+                EXPLAIN ANALYZE
+                SELECT * FROM logtable
+                WHERE logtime BETWEEN '2023-01-01' AND '2023-01-31';
+            </p>
+        </div>
+
+        <h3> Reference：https://stackoverflow.com/questions/73068652/auto-partitioning-trigger-doesnt-work-as-expected</h3>
+      
+     
+
+
+    </div>
+</body>
+</html>
